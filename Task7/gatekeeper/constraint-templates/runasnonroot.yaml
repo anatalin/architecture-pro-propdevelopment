@@ -1,0 +1,106 @@
+# Структура сдачи предусматривает три файла, поэтому здесь два шаблона:
+# запуск не от root и обязательная файловая система только для чтения.
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequirerunasnonroot
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireRunAsNonRoot
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequirerunasnonroot
+
+        violation[{"msg": msg}] {
+          container := all_containers[_]
+          not effective_run_as_non_root(container)
+          msg := sprintf("контейнер %v: требуется runAsNonRoot: true", [container.name])
+        }
+
+        violation[{"msg": msg}] {
+          container := all_containers[_]
+          effective_run_as_user(container) == 0
+          msg := sprintf("контейнер %v: запуск от UID 0 запрещён", [container.name])
+        }
+
+        # Настройка контейнера важнее настройки пода
+        effective_run_as_non_root(container) {
+          container.securityContext.runAsNonRoot == true
+        }
+
+        effective_run_as_non_root(container) {
+          not has_field(container, "securityContext")
+          input.review.object.spec.securityContext.runAsNonRoot == true
+        }
+
+        effective_run_as_non_root(container) {
+          has_field(container, "securityContext")
+          not has_field(container.securityContext, "runAsNonRoot")
+          input.review.object.spec.securityContext.runAsNonRoot == true
+        }
+
+        effective_run_as_user(container) = uid {
+          uid := container.securityContext.runAsUser
+        }
+
+        effective_run_as_user(container) = uid {
+          not has_field(container, "securityContext")
+          uid := input.review.object.spec.securityContext.runAsUser
+        }
+
+        effective_run_as_user(container) = uid {
+          has_field(container, "securityContext")
+          not has_field(container.securityContext, "runAsUser")
+          uid := input.review.object.spec.securityContext.runAsUser
+        }
+
+        has_field(object, field) {
+          _ = object[field]
+        }
+
+        all_containers[container] {
+          container := input.review.object.spec.containers[_]
+        }
+
+        all_containers[container] {
+          container := input.review.object.spec.initContainers[_]
+        }
+
+        all_containers[container] {
+          container := input.review.object.spec.ephemeralContainers[_]
+        }
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequirereadonlyrootfs
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireReadOnlyRootFs
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequirereadonlyrootfs
+
+        violation[{"msg": msg}] {
+          container := all_containers[_]
+          not container.securityContext.readOnlyRootFilesystem == true
+          msg := sprintf("контейнер %v: требуется readOnlyRootFilesystem: true", [container.name])
+        }
+
+        all_containers[container] {
+          container := input.review.object.spec.containers[_]
+        }
+
+        all_containers[container] {
+          container := input.review.object.spec.initContainers[_]
+        }
+
+        all_containers[container] {
+          container := input.review.object.spec.ephemeralContainers[_]
+        }

@@ -1,0 +1,32 @@
+# Исправление 01-privileged-pod.yaml: privileged: true заменён на privileged: false, привилегии сброшены
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-secure-01
+  namespace: audit-zone
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: nginx
+      # Обычный образ nginx запускается от root, этот работает от UID 101 и слушает порт 8080
+      image: nginxinc/nginx-unprivileged:1.31-alpine
+      ports:
+        - containerPort: 8080
+      securityContext:
+        privileged: false
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    # Корневая файловая система только для чтения, nginx пишет временные файлы сюда
+    - name: tmp
+      emptyDir: {}
