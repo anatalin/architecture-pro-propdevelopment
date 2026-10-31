@@ -1,0 +1,47 @@
+# Политика аудита API-сервера для отслеживания небезопасных развёртываний.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  # Значения секретов не должны попадать в журнал
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets"]
+  # Вход в контейнеры и доступ к журналам: важен сам факт обращения
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["pods/exec", "pods/attach", "pods/portforward", "pods/log"]
+  # Создание и изменение подов: видно, какие настройки запрошены и почему отказано
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["pods"]
+  # Изменение пространств имён: снятие меток PodSecurity ослабляет защиту
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["namespaces"]
+  # Изменение прав, правил Gatekeeper и настроек webhook
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: "rbac.authorization.k8s.io"
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+      - group: "templates.gatekeeper.sh"
+        resources: ["constrainttemplates"]
+      - group: "constraints.gatekeeper.sh"
+      - group: "admissionregistration.k8s.io"
+        resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+  # Чтение служебными компонентами создаёт много шума
+  - level: None
+    verbs: ["get", "list", "watch"]
+    users: ["system:kube-controller-manager", "system:kube-scheduler", "system:kube-proxy", "system:apiserver"]
+  - level: None
+    userGroups: ["system:nodes"]
+    verbs: ["get", "list", "watch"]
+  - level: Metadata
